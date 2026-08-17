@@ -1,269 +1,297 @@
-# 📘 Grainlify — Grant Execution Infrastructure for Open Source
+# Grainlify
 
-## 1. Problem Statement
+**Grant execution infrastructure for open source.** Ecosystems fund the work; Grainlify decides who gets to do it, judges what was delivered, and lets contributors claim what they earned — verifiably, on-chain.
 
-Open-source ecosystems regularly allocate **grant funding** to support critical projects and contributors.
+> **A reward you can calculate in advance is a reward you can farm.**
 
-However, today’s grant execution model has major gaps:
-
-- Grant money is often managed **off-chain**
-- Project maintainers manually distribute rewards
-- Contributor payments are delayed or subjective
-- Ecosystems lack verifiable proof of how grants convert into real work
-- Contributors must trust platforms or maintainers to be paid fairly
-
-Platforms like OnlyDust solve **grant discovery and coordination**, but **grant execution and payout automation remain largely manual**.
+That one sentence explains most of the design decisions below.
 
 ---
 
-## 2. Our Core Idea (One Sentence)
+## Honest status
 
-> **Grainlify is a grant execution layer that converts ecosystem funding into automated, verifiable payments for open-source contributions.**
+This README marks every capability with where it actually stands. Nothing here is aspirational without saying so.
 
----
+| | Meaning |
+|---|---|
+| **Live** | Running in production, used by real people today |
+| **Built** | Written, tested, not yet wired into a path anyone travels |
+| **Designed** | Argued through and specified; no implementation yet |
 
-## 3. High-Level Concept
-
-Grainlify sits **between ecosystems and contributors**, ensuring that:
-
-1. Ecosystems fund **programs** (hackathons, grant rounds)
-2. Programs fund **projects**
-3. Projects fund **contributors**
-4. All payouts are:
-   - escrow-backed
-   - rule-based
-   - automated on real GitHub work
-   - verifiable on-chain
+**As of 18 August 2026: no funded event has run, and nothing has been paid out on any chain.** Everything about payouts below is Built or Designed. We would rather say that than let a reader assume otherwise.
 
 ---
 
-## 4. Two Core Execution Modes
+## 1. The problem
 
-Grainlify supports both **time-boxed programs** and **continuous contributions**.
+Ecosystems allocate real money to open source. The allocation part works. The execution part does not:
 
-This enables **continuous OSS funding**, not just events.
+- Funding is managed off-chain, with no verifiable link between money spent and work delivered
+- Maintainers distribute rewards manually, which does not scale and is not auditable
+- Contributors must trust that they will be paid fairly, with no way to check
+- Reward rules are either undisclosed or precise enough to game
 
----
+Discovery and coordination are largely solved — OnlyDust, GrantFox and Drips Wave all do this well. **Execution is not.**
 
-## 5. System Roles
+## 2. What Grainlify does differently
 
-### Ecosystem (Stellar)
+Most platforms publish what a contribution is worth before the work starts: fixed bounties, point shares, first-come assignment. Anything calculable in advance is farmable, and those models reward speed and volume rather than quality.
 
-- Provide grant capital
-- Define program scope and duration
-- Gain transparent, verifiable impact data
+Grainlify inverts three things:
 
-### Grainlify Platform
+**Assignment is a weighted draw, not first-come** — inside a funded event. Applying earlier does not help. Applying to more issues does not improve your odds on any one of them.
 
-- Operates grant programs and hackathons
-- Tracks contributions and scoring
-- Enforces execution rules
-- Automates payouts
-- Handles compliance off-chain
+**Rewards are decided after the work is judged**, not published in advance.
 
-### Project Maintainers
-
-- Register projects
-- Create issues and bounties
-- Define point values
-- Lock funds into escrow
-
-### Contributors
-
-- Work normally on GitHub
-- Submit PRs
-- Earn points or rewards
-- Get paid automatically after verification
+**All 102 allocation parameters are public.** Knowing exactly how you are weighted still gives you nothing to farm, because every input is something you can only change by doing good work.
 
 ---
 
-## 6. What Lives Where (Very Important)
+## 3. Two modes, and an important scope note
 
-### Off-Chain (Backend)
+**Inside GrainHack** — a funded event. An ecosystem funds the pool, so assignment must be unfarmable. Issues carry rewards, assignment runs through the weighted draw, and payouts settle on-chain.
 
-Stored and processed off-chain:
+**Outside GrainHack** — ordinary open-source contribution. No money moves, so maintainers assign issues themselves, exactly as they would anywhere else. This is intentional. The draw exists to protect funded assignment; where there is nothing to farm, there is nothing to protect against.
 
-- projects and repositories
-- GitHub issues and PRs (via webhooks / API)
-- point assignments and scoring
-- contributor rankings
-- KYC status
-- payout calculation
-
-This keeps the system:
-
-- flexible
-- efficient
-- privacy-safe
-
-### On-Chain (Smart Contracts)
-
-Stored on-chain **only**:
-
-- program or hackathon escrow
-- total funds locked
-- remaining balance
-- authorized payout key
-- final payouts to wallets
-
-No identities, points, or GitHub data are stored on-chain.
+Anywhere our documentation or copy describes the draw, it is scoped to GrainHack. If you find a place where it is not, that is a bug and we want to hear about it.
 
 ---
 
-## 7. End-to-End Flow (Hackathon Example)
-
-### Step 1 — Program Funding
-
-- Ecosystem locks funds into an on-chain escrow  
-  Example: 50,000 XLM for “Stellar Q1 OSS Program”
-
-### Step 2 — Hackathon Runs
-
-- Projects participate
-- Contributors work on GitHub
-- Points are awarded off-chain
-
-### Step 3 — Scoring & Eligibility
-
-- Backend computes final scores
-- Only **KYC-approved contributors** are eligible for payout
-
-### Step 4 — Automated Payout
-
-- Backend triggers escrow contract
-- Funds are sent **directly** to contributor wallets
-- Backend never holds funds
-
-### Hackathon Flow (Diagram)
+## 4. System overview
 
 ```mermaid
 flowchart TB
-    Ecosystem["Ecosystem / Foundation"]
-    Escrow["On-chain Escrow<br/>Stellar (Soroban) Smart Contract"]
-    Backend["Grainlify Backend"]
-    GitHub["GitHub<br/>Issues & PRs"]
-    Contributors["Contributors"]
-    Wallets["Contributor Wallets"]
+    subgraph chain["On-chain — per event"]
+        Escrow["Escrow object<br/>funded, root published"]
+        Claim["Pull claim<br/>Merkle proof verified"]
+    end
 
-    Ecosystem -->|"Lock Prize Pool"| Escrow
-    Contributors -->|"Work & PRs"| GitHub
-    GitHub -->|"Webhooks"| Backend
-    Backend -->|"Score & KYC Check"| Backend
-    Backend -->|"Trigger Payout"| Escrow
-    Escrow -->|"Direct Transfer"| Wallets
+    subgraph off["Off-chain — Grainlify backend"]
+        Index["Repository index<br/>GitHub App"]
+        Draw["Weighted draw<br/>assignment"]
+        Judge["Review &amp; scoring"]
+        Compute["Allocation<br/>exact minor units"]
+        KYC["Identity verification"]
+    end
+
+    Funder["Ecosystem / Foundation"]
+    GH["GitHub"]
+    Contrib["Contributors"]
+
+    Funder -->|"funds pool"| Escrow
+    GH -->|"webhooks"| Index
+    Contrib -->|"apply"| Draw
+    Draw -->|"assigned"| GH
+    Contrib -->|"pull requests"| GH
+    Index --> Judge --> Compute
+    KYC -->|"eligibility"| Compute
+    Compute -->|"Merkle root"| Escrow
+    Escrow --> Claim
+    Contrib -->|"claims"| Claim
 ```
 
-### Detailed Sequence Flow
+Note the direction of the last arrow. **Contributors claim; we never push funds to an address.** No batch transfer, no admin-initiated payment to a user. This is a deliberate constraint, not an implementation detail.
+
+---
+
+## 5. What lives where
+
+### Off-chain
+
+Repositories and issues, applications and assignments, review outcomes, contributor rankings, identity verification status, and the allocation computation.
+
+Kept off-chain for flexibility, cost, and — for identity data — because it does not belong on a public ledger.
+
+### On-chain
+
+Per event: the escrow balance, the published Merkle root, claimed markers, and the claim deadline.
+
+**No identities, no GitHub data, no scores.** A leaf commits to an address and an amount. Nothing else about a person reaches the chain.
+
+**The chain is the system of record.** Where the database and the chain disagree, the chain wins and the database is corrected.
+
+---
+
+## 6. GrainHack lifecycle
 
 ```mermaid
 sequenceDiagram
-    participant E as Ecosystem
-    participant S as Stellar (Soroban) Escrow Contract
-    participant B as Grainlify Backend
+    participant F as Ecosystem
+    participant E as Escrow contract
+    participant B as Grainlify backend
     participant G as GitHub
     participant C as Contributor
-    participant W as Contributor Wallet
 
-    E->>S: Lock Program Funds
-    C->>G: Submit PRs
-    G-->>B: PR Merged Webhook
-    B->>B: Award Points (Off-chain)
-    B->>S: Trigger Payouts
-    S->>W: Transfer XLM
+    F->>E: initialise (destination, claim window)
+    F->>E: fund pool
+    C->>B: apply to issue
+    B->>B: weighted draw
+    B->>G: assign winner
+    C->>G: submit pull request
+    G-->>B: merge webhook
+    B->>B: review, score, allocate
+    B->>B: dry run — read before any chain step
+    B->>E: publish_root (permanent)
+    C->>E: claim with Merkle proof
+    E-->>C: transfer
+    B->>B: reconcile from chain state
 ```
 
----
+### The weighted draw
 
-## 8. KYC & Compliance Model
+Weight starts at 1.0 and is multiplied by:
 
-KYC is handled entirely off-chain.
+| Factor | Effect |
+|---|---|
+| Fit for that specific issue | ×2.0 / ×1.0 / ×0.25 |
+| Difficulty above your level | ×0.5 |
+| Prior completion | ×1.5 |
+| First-ever application | ×1.5 |
+| Each prior abandonment | ×0.5, compounding |
 
-- Contributor identity and status are never stored on-chain
-- Only wallets linked to approved KYC records are included in payouts
+**Explicitly excluded**, and enforced by never being read: total pull requests, merge rate, follower count, repository stars, total contributions, and the quality of your application text.
 
-This ensures:
+The newcomer weight is anchored on prior *assignments*, not prior *applications* — specifically so that applying more cannot help you.
 
-- privacy
-- regulatory flexibility
-- minimal on-chain complexity
+### Reward decisions
 
----
-
-## 9. Why This Model Works
-
-### For Ecosystems
-
-- Funds locked before work begins
-- Clear proof of grant usage
-- Reduced misuse risk
-
-### For Maintainers
-
-- No manual reward handling
-- Budget clarity
-- Lower admin overhead
-
-### For Contributors
-
-- Predictable rewards
-- Guaranteed payouts
-- Merit-based scoring
+Rewards are retroactive and quality-gated. AI-assisted judging is **built and deliberately disabled**: our own calibration measured 70–75% agreement against a 60% always-accept baseline, which is not good enough to decide who gets paid. It stays off until it is clearly better than not having it.
 
 ---
 
-## 10. Key Differentiation
+## 7. Payout architecture
 
-| Feature | Traditional Grant Platforms | Grainlify |
-|---|---:|---:|
-| Grant discovery | ✅ | ✅ |
-| Hackathons | ✅ | ✅ |
-| Always-on bounties | ❌ | ✅ |
-| On-chain escrow | ❌ | ✅ |
-| Point-based allocation | ❌ | ✅ |
-| Automated payouts | ❌ | ✅ |
-| Non-custodial payments | ❌ | ✅ |
+```mermaid
+flowchart LR
+    Compute["Allocation<br/>big.Rat shares<br/>big.Int minor units"]
+    Tree["Merkle tree<br/>sha256, per event"]
+    Ops["chain_operations<br/>row before submission"]
+    Adapter["Chain adapter"]
+    Move["Aptos — Move"]
+    Soroban["Stellar — Soroban"]
+    Recon["Reconciler<br/>reads chain, promotes to paid"]
 
----
+    Compute --> Tree --> Ops --> Adapter
+    Adapter --> Move
+    Adapter --> Soroban
+    Move --> Recon
+    Soroban --> Recon
+    Recon -.->|"corrects"| Ops
+```
 
-## 11. Design Principles
+**The only chain-specific component is the contract and a thin adapter.** Allocation, the Merkle tree, operation records, reconciliation, claim state and idempotency are all chain-agnostic — which is why a second chain is a second contract rather than a second project.
 
-- **Escrow-first**: funds locked before work begins
-- **Automation over trust**: payouts follow rules
-- **Minimal on-chain logic**: contracts act as vaults
-- **Off-chain intelligence**: scoring and verification stay flexible
-- **Ecosystem-agnostic**: same execution model across chains
+Key properties:
 
----
+- **Exact arithmetic.** Shares in `big.Rat`, payouts in `big.Int` minor units. No floating point anywhere between database and leaf. Lines are asserted to sum to the pool exactly; the remainder rule is largest fractional remainder first, ties broken by lowest user id — arbitrary by design, because determinism matters more than cleverness at 0.000001 units.
+- **Dry run first.** The full allocation is computed and read by a human before anything touches a chain. `publish_root` is permanent.
+- **A row before submission.** Only the reconciler, reading chain state, may mark anything paid.
+- **Cross-language vectors.** The Merkle leaf and tree are pinned by shared test vectors so the Go builder and the on-chain verifier cannot silently diverge. Every implementation is mutation-tested against those vectors.
 
-## 12. What Grainlify Is (and Is Not)
+### Sweep — Designed
 
-### Grainlify Is
+Two functions, never one:
 
-- a grant execution infrastructure
-- a payout automation layer
-- a coordination system for OSS funding
+**Residue** (`balance − root_total`) belongs to nobody and no leaf can claim it, so it sweeps immediately.
 
-### Grainlify Is Not
-
-- a DAO
-- a marketplace
-- a GitHub replacement
-- a custodial payment platform
+**Unclaimed entitlements** belong to named people who have not turned up, and carry the full claim window. The destination is fixed at initialisation and is never a parameter on the sweep call. The deadline can be **extended but never shortened** — so the admin power is to give more time, never to cut anyone off.
 
 ---
 
-## 13. Vision
+## 8. Identity and compliance
 
-Grainlify’s long-term vision is to become the default execution layer for open-source grants, enabling ecosystems to move from:
+Identity verification runs off-chain through a third-party provider. Verification status gates eligibility; **no identity data ever reaches the chain.**
 
-> “We funded projects.”
-
-to:
-
-> “We verifiably paid for real work.”
+Verification outcomes carry plain-language reasons back to the contributor so a failure is actionable rather than a dead end. Fraud-signal categories are deliberately never explained to the person they concern.
 
 ---
 
-## 14. One-Line Summary
+## 9. Where Grainlify sits
 
-> **Grainlify turns ecosystem grants into automatic, verifiable payments for open-source contributions.**
+| | Discovery | Coordination | Unfarmable assignment | Retroactive rewards | On-chain claims |
+|---|---|---|---|---|---|
+| Traditional grant programmes | Manual | Manual | — | Sometimes | — |
+| Contribution platforms | Yes | Yes | — | — | Varies |
+| **Grainlify** | Yes | Yes | Yes, in funded events | Yes | Designed, not yet run |
+
+We are not the first into this space and we do not claim to be. OnlyDust proved contributors show up when work is discoverable and reputation travels with them. GrantFox showed maintainers need a real surface rather than a bounty board. Drips Wave proved recurring cycles build habit. We took a different bet on the one thing all three leave calculable in advance.
+
+---
+
+## 10. Design principles
+
+- **Escrow first** — funds are locked before work begins
+- **Pull, never push** — contributors claim; the platform never sends
+- **The chain is the system of record** — the database is a cache of it
+- **Minimal on-chain logic** — contracts are vaults and verifiers, not business rules
+- **Publish the parameters** — auditable without being predictable
+- **Never overstate readiness** — status labels stay in the copy
+
+---
+
+## 11. What Grainlify is not
+
+- Not a DAO
+- Not a marketplace
+- Not a GitHub replacement
+- Not custodial — we never hold contributor funds
+- Not a payments platform outside funded events
+
+---
+
+## 12. Current scale
+
+As of 18 August 2026. The index grows continuously, so every figure carries a date.
+
+| | |
+|---|---|
+| Indexed repositories (live, verified) | 167 |
+| Non-fork | 135 |
+| Distinct GitHub owners | 33 |
+| Owners with a complete project profile | 25 |
+| Indexed issues | 5,591 |
+| Merged pull requests indexed | 3,707 across 1,028 distinct authors |
+| Registered accounts | 131 |
+| Founding contributor pool members | 38 |
+| Funded events run | 0 |
+| Payouts made, any chain | 0 |
+
+Forks are excluded from ranking and from every project surface — a fork is a repository the contributor controls, which would otherwise make the leaderboard farmable on the one mechanism we claim is not.
+
+---
+
+## 13. Repositories
+
+| Repository | Contents |
+|---|---|
+| `Grainlify-Backend` | Go API, GitHub App integration, allocation, Merkle tree, chain adapters |
+| `Grainlify-Frontend` | React / Vite application |
+| `Grainlify-Docs` | Public documentation |
+| `Aptos-Contracts` | Move contracts — escrow, root publication, pull claims |
+| `Stellar-Contracts` | Soroban implementation of the same model |
+| `Grainlify-Specs` | Allocation parameters and protocol specifications |
+
+---
+
+## 14. Roadmap
+
+**Now** — Aptos testnet: escrow, root publication, and a complete end-to-end claim by a real contributor.
+
+**Next** — Soroban against the same chain-agnostic core.
+
+**Then** — the first funded GrainHack event, end to end.
+
+We will announce the first real payout when it happens, with the transaction, and not before.
+
+---
+
+## 15. Contributing and contact
+
+Issues and pull requests are welcome across all repositories.
+
+- Website — [grainlify.com](https://grainlify.com)
+- Documentation — [docs.grainlify.com](https://docs.grainlify.com)
+- Telegram — [@Grainlify](https://t.me/Grainlify)
+- X — [@Grainlify](https://x.com/Grainlify)
+
+If you find a claim in our documentation, product copy or this README that is not true of the code, please open an issue. We have corrected several this month and we would rather hear it from you than not at all.
